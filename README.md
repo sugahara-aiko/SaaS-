@@ -8,7 +8,7 @@
 |---|---|---|
 | **Step 0** | シート構成の再構築(4シート分割・費用の数値化) | 完了(`gas/setup.gs`) |
 | **Step 1** | 通知の自動化(月初のチェック行自動生成、Slackリマインド、更新日アラート) | **`gas/step1_notifications.gs`** |
-| Step 2 | ユーザー数のAPI自動取得(Google Workspace → Slack → Claude API の順) | 未着手 |
+| **Step 2** | ユーザー数のAPI自動取得(Google Workspace → Slack → Claude API の順) | Workspace分: **`gas/step2_workspace.gs`** / Slack・Claude API: 未着手 |
 | Step 3 | 在籍者マスタとの突合・前月比差分の自動検知 | 未着手 |
 
 ## Step 0: セットアップスクリプトの実行手順
@@ -89,11 +89,39 @@ Step 0のセットアップ完了後に導入します。
 
 3. 今月分の行をすぐ作りたい場合は **`runMonthlyStart`** を手動実行(当月分が既にあれば何もしない)
 
+## Step 2-1: Google Workspaceユーザー数の自動取得
+
+Step 1の導入完了後に追加します。**Google Workspaceの管理者権限があるアカウント**で設定・実行してください。
+
+### 1. Admin SDKを有効にする
+
+1. Apps Scriptエディタ左の **サービス(+)** をクリック
+2. **Admin SDK Directory API** を選んで「追加」(識別子はデフォルトの `AdminDirectory` のまま)
+
+### 2. スクリプトを追加する
+
+- 新しいファイル(名前: `step2_workspace`)を作成し、[`gas/step2_workspace.gs`](gas/step2_workspace.gs) の内容を貼り付けて保存
+
+### 3. 動作確認とトリガー登録
+
+1. 関数 **`syncWorkspaceUsers`** を実行(初回は権限承認あり)。以下が行われます:
+   - 月次チェックログの当月「GoogleWorkspace」行にアクティブユーザー数を自動記入(**結果のOK判定は従来どおり人間が行う**)
+   - 在籍者マスタに全ユーザーを反映(新規は行追加、停止中は「退職」に更新。氏名・区分などの手動編集は上書きしない)
+   - 結果をSlackに通知(停止中アカウント、在籍者マスタで「在籍」なのにWorkspaceにいないメールも報告)
+2. 在籍者マスタに追加された行の **区分(社員/業務委託)を手動で埋める**(初回のみ)
+3. 関数 **`setupStep2Triggers`** を実行 → 毎月1日10時台(Step 1の行生成の後)に自動実行
+
+### 補足
+
+- Workspaceに存在しない「在籍」メンバーは自動で退職扱いにしません(業務委託などWorkspace未付与のケースがあるため)。Slack通知で報告するだけなので、該当者は備考に「Workspace対象外」などとメモしておくと毎月の通知が読みやすくなります。
+- カシェイ側のGoogle Workspaceは別組織のため対象外です(従来どおり)。
+
 ## ディレクトリ構成
 
 ```
 gas/
   setup.gs                # Step 0: シート構成セットアップ(移行データ込み)
   step1_notifications.gs  # Step 1: 月初の行自動生成+Slack通知
-  appsscript.json         # GASマニフェスト(将来clasp運用する場合の下地)
+  step2_workspace.gs      # Step 2-1: Google Workspaceユーザー数の自動取得
+  appsscript.json         # GASマニフェスト(AdminDirectory有効化済み)
 ```
