@@ -8,7 +8,7 @@
 |---|---|---|
 | **Step 0** | シート構成の再構築(4シート分割・費用の数値化) | 完了(`gas/setup.gs`) |
 | **Step 1** | 通知の自動化(月初のチェック行自動生成、メールリマインド、更新日アラート) | **`gas/step1_notifications.gs`** |
-| **Step 2** | ユーザー数のAPI自動取得(Google Workspace → Slack → Claude API の順) | Workspace分: **`gas/step2_workspace.gs`** / Slack・Claude API: 未着手 |
+| **Step 2** | ユーザー数のAPI自動取得(Google Workspace → Slack → Claude API の順) | Workspace: **`gas/step2_workspace.gs`** / Slack: **`gas/step2_slack.gs`** / Claude API: 未着手 |
 | Step 3 | 在籍者マスタとの突合・前月比差分の自動検知 | 未着手 |
 
 ## Step 0: セットアップスクリプトの実行手順
@@ -110,6 +110,39 @@ Step 1の導入完了後に追加します。**Google Workspaceの管理者権�
 - Workspaceに存在しない「在籍」メンバーは自動で退職扱いにしません(業務委託などWorkspace未付与のケースがあるため)。ログのメモ列に記録するだけなので、該当者は在籍者マスタの備考に「Workspace対象外」などとメモしておいてください。
 - カシェイ側のGoogle Workspaceは別組織のため対象外です(従来どおり)。
 
+## Step 2-2: Slackユーザー数の自動取得
+
+### 1. Slackアプリを作成してBotトークンを発行する
+
+1. https://api.slack.com/apps を開き、**Create New App > From scratch** を選択
+2. アプリ名(例: `SaaS管理bot`)を入力し、自社のワークスペースを選んで作成
+3. 左メニューの **OAuth & Permissions** を開き、「Scopes > Bot Token Scopes」に以下の2つを追加:
+   - `users:read`
+   - `users:read.email`
+4. 同じページ上部の **Install to Workspace** をクリックして承認
+5. 表示される **Bot User OAuth Token**(`xoxb-` で始まる)をコピー
+
+### 2. トークンを設定してスクリプトを追加する
+
+1. Apps Scriptエディタの **プロジェクトの設定(歯車) > スクリプト プロパティ** に追加:
+   - プロパティ名: `SLACK_BOT_TOKEN`、値: コピーしたトークン
+   - ※ トークンはコードに直書きしない
+2. 新しいファイル(名前: `step2_slack`)を作成し、[`gas/step2_slack.gs`](gas/step2_slack.gs) の内容を貼り付けて保存
+
+### 3. 動作確認とトリガー登録
+
+1. 関数 **`syncSlackUsers`** を実行(初回は外部接続の権限承認あり)。以下が行われます:
+   - 全ユーザーを「管理者 / メンバー / マルチchゲスト / シングルchゲスト」に自動分類し、月次チェックログの当月のSlack 4行に人数を記入
+   - 管理者・メンバーのうち**在籍者マスタで「在籍」になっていない人**をメモ列に記録(退職者残りの検知)
+   - ゲスト2行のメモには名前一覧を記録(不要なゲストの目視チェック用)
+2. 関数 **`setupSlackSyncTrigger`** を実行 → 毎月1日10時台に自動実行
+
+### 補足
+
+- Bot・解除済みアカウントは人数に含めません。
+- 在籍者マスタとの突合はメールアドレスで行うため、Slackのプロフィールにメールが入っていない人は「要確認」として出ます。
+- アプリの作成・インストールにワークスペースの管理者承認が必要な場合があります。
+
 ## ディレクトリ構成
 
 ```
@@ -117,5 +150,6 @@ gas/
   setup.gs                # Step 0: シート構成セットアップ(移行データ込み)
   step1_notifications.gs  # Step 1: 月初の行自動生成+メール通知
   step2_workspace.gs      # Step 2-1: Google Workspaceユーザー数の自動取得
+  step2_slack.gs          # Step 2-2: Slackユーザー数の自動取得(4区分)
   appsscript.json         # GASマニフェスト(AdminDirectory有効化済み)
 ```
