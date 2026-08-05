@@ -8,7 +8,7 @@
 |---|---|---|
 | **Step 0** | シート構成の再構築(4シート分割・費用の数値化) | 完了(`gas/setup.gs`) |
 | **Step 1** | 通知の自動化(月初のチェック行自動生成、メールリマインド、更新日アラート) | **`gas/step1_notifications.gs`** |
-| **Step 2** | ユーザー数のAPI自動取得(Google Workspace → Slack → Claude API の順) | Workspace: **`gas/step2_workspace.gs`** / Slack: **`gas/step2_slack.gs`** / Claude API: 未着手 |
+| **Step 2** | ユーザー数のAPI自動取得(Google Workspace → Slack → Claude API) | 完了: `gas/step2_workspace.gs` / `gas/step2_slack.gs` / **`gas/step2_claude.gs`** |
 | Step 3 | 在籍者マスタとの突合・前月比差分の自動検知 | 未着手 |
 
 ## Step 0: セットアップスクリプトの実行手順
@@ -143,6 +143,32 @@ Step 1の導入完了後に追加します。**Google Workspaceの管理者権�
 - 在籍者マスタとの突合はメールアドレスで行うため、Slackのプロフィールにメールが入っていない人は「要確認」として出ます。
 - アプリの作成・インストールにワークスペースの管理者承認が必要な場合があります。
 
+## Step 2-3: Claude API(コスト・APIキー・メンバー)の自動取得
+
+### 1. Admin APIキーを発行する
+
+1. [Claude Console](https://platform.claude.com/) に**組織のadminロール**を持つアカウントでログイン
+2. 設定(Settings)から **Admin API キー** を作成(`sk-ant-admin...` で始まるキー。通常のAPIキーとは別物)
+3. キーをコピーしておく(再表示できないため注意)
+
+### 2. キーを設定してスクリプトを追加する
+
+1. Apps Scriptの **プロジェクトの設定 > スクリプト プロパティ** に追加:
+   - プロパティ名: `ANTHROPIC_ADMIN_KEY`、値: コピーしたキー
+2. 新しいファイル(名前: `step2_claude`)を作成し、[`gas/step2_claude.gs`](gas/step2_claude.gs) の内容を貼り付けて保存
+
+### 3. 動作確認とトリガー登録
+
+1. 関数 **`syncClaudeApi`** を実行。以下が行われます:
+   - **前月のAPIコスト(USD)** をワークスペース別に集計し、月次チェックログの当月「Claude API」行の数量列に合計額を記入 → 前月比のコスト増減が自動計算されるので、「上限$100/$45に収まっているか」を見るだけになります
+   - **アクティブなAPIキー本数**・**組織メンバー数**・在籍者マスタとの不一致をメモ列に記録
+2. 関数 **`setupClaudeSyncTrigger`** を実行 → 毎月1日10時台に自動実行
+
+### 補足
+
+- コストの判定(想定内か)と失効すべきキーの判断は従来どおり人間が行います。キーの棚卸しが必要になったらConsoleの管理画面で操作してください。
+- Admin APIキーは組織全体の管理権限を持つため、スクリプトプロパティ以外の場所(コードやシート)には絶対に書かないでください。
+
 ## ディレクトリ構成
 
 ```
@@ -151,5 +177,6 @@ gas/
   step1_notifications.gs  # Step 1: 月初の行自動生成+メール通知
   step2_workspace.gs      # Step 2-1: Google Workspaceユーザー数の自動取得
   step2_slack.gs          # Step 2-2: Slackユーザー数の自動取得(4区分)
+  step2_claude.gs         # Step 2-3: Claude APIのコスト・キー・メンバー自動取得
   appsscript.json         # GASマニフェスト(AdminDirectory有効化済み)
 ```
