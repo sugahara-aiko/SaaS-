@@ -78,7 +78,7 @@ function fetchWorkspaceUsers_() {
 
 /**
  * 在籍者マスタを更新する。
- * - 新規メールは行を追加(区分・入社日などは手動入力のため空欄のまま)
+ * - 新規メールは行を追加(区分は手動入力のため空欄のまま)
  * - 既存行は在籍状況のみ更新(氏名などの手動編集は上書きしない)
  * - Workspaceから消えた人は自動では退職にしない(業務委託がWorkspace未付与の
  *   場合があるため)→ findSheetOnlyMembers_ でログのメモに回す
@@ -102,15 +102,15 @@ function updateMembersSheet_(ss, users) {
       if (data[row - 1][3] !== status) {
         sheet.getRange(row, 4).setValue(status);
         if (u.suspended) {
-          const note = String(data[row - 1][6] || '');
+          const note = String(data[row - 1][4] || '');
           if (note.indexOf('停止中') === -1) {
-            sheet.getRange(row, 7).setValue((note ? note + ' / ' : '') + 'Workspaceアカウント停止中');
+            sheet.getRange(row, 5).setValue((note ? note + ' / ' : '') + 'Workspaceアカウント停止中');
           }
         }
       }
     } else {
-      sheet.getRange(nextRow, 1, 1, 7).setValues([[
-        u.name, u.email, '', status, '', '',
+      sheet.getRange(nextRow, 1, 1, 5).setValues([[
+        u.name, u.email, '', status,
         '自動追加(Workspace)' + (u.suspended ? ' / アカウント停止中' : '')
       ]]);
       added.push(u.email);

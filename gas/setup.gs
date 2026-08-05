@@ -421,7 +421,7 @@ function createLogSheet_(ss) {
 // ---------------------------------------------------------------------------
 
 const MEMBERS_HEADERS = [
-  '氏名', 'メールアドレス', '区分', '在籍状況', '入社日', '退職日', '備考'
+  '氏名', 'メールアドレス', '区分', '在籍状況', '備考'
 ];
 
 function createMembersSheet_(ss) {
@@ -430,7 +430,6 @@ function createMembersSheet_(ss) {
 
   setListValidation_(sheet, 'C2:C200', ['社員', '業務委託', 'その他']);
   setListValidation_(sheet, 'D2:D200', ['在籍', '退職']);
-  sheet.getRange('E2:F200').setNumberFormat('yyyy/mm/dd');
 
   styleHeader_(sheet, MEMBERS_HEADERS.length);
   sheet.setColumnWidth(2, 240);
