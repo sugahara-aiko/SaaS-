@@ -1,9 +1,13 @@
 /**
  * Step 2-3: Claude API(Anthropic)のコスト・APIキー・メンバーの自動取得
  *
+ * ※ 現在は未使用(導入見送り)。Admin APIキーの発行には組織のadminロールが
+ *    必要なため。「Claude API」行は手動チェックを継続する(README参照)。
+ *    将来キーが用意できたら、このファイルをそのまま導入すれば自動化できる。
+ *
  * setup.gs と同じApps Scriptプロジェクトに追加する(このファイル単体で動作する)。
  *
- * 事前準備(READMEにも記載):
+ * 事前準備:
  *   1. Claude Consoleで Admin APIキー(sk-ant-admin...)を発行
  *      (組織のadminロールが必要)
  *   2. スクリプト プロパティ ANTHROPIC_ADMIN_KEY にキーを設定
