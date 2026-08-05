@@ -1,21 +1,25 @@
 /**
- * Step 1: 通知の自動化
+ * Step 1: 通知の自動化(メール通知版)
  *
  * setup.gs と同じApps Scriptプロジェクトに新しいファイルとして追加する
  * (シート名などの定数は setup.gs のものを共用)。
  *
- * 導入手順:
- *   1. Slack Incoming WebhookのURLを「プロジェクトの設定 > スクリプト プロパティ」の
- *      キー SLACK_WEBHOOK_URL に設定する(コードには直書きしない)
- *   2. testSlackNotification を実行して疎通確認(初回は権限承認あり)
- *   3. setupTriggers を実行してトリガーを登録する
+ * 方針: 通知は「やることがあるときだけ」届く。
+ *   - 毎月1日 9時台: 当月のチェック行を自動生成(これ自体は通知しない)。
+ *     更新日が60日以内に迫った契約があればメールで知らせる
+ *   - 毎月8日 9時台: 「未確認」が残っていればメールでリマインド
  *
- * 動作:
- *   - 毎月1日 9時台: 当月のチェック行を自動生成 + 開始通知 + 更新日アラート
- *   - 毎月8日 9時台: 「未確認」が残っていればリマインド(なければ何もしない)
+ * 送信先: スクリプト実行者(トリガー登録者)のメールアドレス。
+ *   変えたい場合はスクリプト プロパティ NOTIFY_EMAIL に宛先を設定
+ *   (カンマ区切りで複数指定も可)。
+ *
+ * 導入手順:
+ *   1. このファイルを追加して保存
+ *   2. testEmailNotification を実行して届くことを確認(初回は権限承認あり)
+ *   3. setupTriggers を実行してトリガーを登録
  */
 
-const PROP_SLACK_WEBHOOK = 'SLACK_WEBHOOK_URL';
+const PROP_NOTIFY_EMAIL = 'NOTIFY_EMAIL';
 const REMIND_DAY = 8;          // 未確認リマインドを送る日
 const RENEWAL_ALERT_DAYS = 60; // 更新日アラートの対象範囲(日)
 
@@ -33,11 +37,11 @@ function setupTriggers() {
   });
   ScriptApp.newTrigger('runMonthlyStart').timeBased().onMonthDay(1).atHour(9).create();
   ScriptApp.newTrigger('runUncheckedReminder').timeBased().onMonthDay(REMIND_DAY).atHour(9).create();
-  Logger.log('トリガーを登録しました: 毎月1日9時台(行生成+開始通知+更新日アラート) / 毎月' + REMIND_DAY + '日9時台(未確認リマインド)');
+  Logger.log('トリガーを登録しました: 毎月1日9時台(行生成+更新日アラート) / 毎月' + REMIND_DAY + '日9時台(未確認リマインド)');
 }
 
 // ---------------------------------------------------------------------------
-// 毎月1日: チェック行の自動生成 + 開始通知 + 更新日アラート
+// 毎月1日: チェック行の自動生成 + 更新日アラート
 // ---------------------------------------------------------------------------
 
 function runMonthlyStart() {
@@ -45,31 +49,24 @@ function runMonthlyStart() {
   const created = createMonthlyLogRows_(ss);
 
   if (created === null) {
-    // 当月分は既に作成済み(トリガーの重複起動など)。通知も送らない
+    // 当月分は既に作成済み(トリガーの重複起動など)。アラートの二重送信も避ける
     Logger.log('当月分のチェック行は作成済みのためスキップしました。');
     return;
   }
-
-  const tz = ss.getSpreadsheetTimeZone();
-  const thisMonth = Utilities.formatDate(new Date(), tz, 'yyyy-MM');
-
-  const lines = [];
-  lines.push('📋 *[SaaS管理] ' + thisMonth + ' の月次チェックを開始します*');
-  lines.push('チェック対象 ' + created.length + '件の行を「' + SHEET_LOG + '」に作成しました:');
-  lines.push(created.map(function (n) { return '・' + n; }).join('\n'));
+  Logger.log('当月のチェック行を ' + created.length + '件 作成しました: ' + created.join(', '));
 
   const renewals = getUpcomingRenewals_(ss, RENEWAL_ALERT_DAYS);
-  if (renewals.length > 0) {
-    lines.push('');
-    lines.push('🔔 *' + RENEWAL_ALERT_DAYS + '日以内に更新日が来る契約:*');
-    renewals.forEach(function (r) {
-      lines.push('・' + r.tool + (r.plan ? '(' + r.plan + ')' : '') + ' — ' + r.dateText + (r.overdue ? ' ⚠️期限超過' : ''));
-    });
-  }
+  if (renewals.length === 0) return;
 
+  const lines = [];
+  lines.push(RENEWAL_ALERT_DAYS + '日以内に更新日が来る契約があります。継続/解約を確認してください。');
+  lines.push('');
+  renewals.forEach(function (r) {
+    lines.push('・' + r.tool + (r.plan ? '(' + r.plan + ')' : '') + ' — ' + r.dateText + (r.overdue ? ' ※期限超過' : ''));
+  });
   lines.push('');
   lines.push('シート: ' + ss.getUrl());
-  sendSlack_(lines.join('\n'));
+  sendNotification_('[SaaS管理] 更新日が近い契約があります', lines.join('\n'));
 }
 
 /**
@@ -163,40 +160,35 @@ function runUncheckedReminder() {
   }
 
   const lines = [];
-  lines.push('⏰ *[SaaS管理] ' + thisMonth + ' 分で未確認のチェックが ' + unchecked.length + '件 残っています*');
+  lines.push(thisMonth + ' 分で未確認の月次チェックが ' + unchecked.length + '件 残っています:');
+  lines.push('');
   lines.push(unchecked.map(function (n) { return '・' + n; }).join('\n'));
   lines.push('');
   lines.push('確認したら「' + SHEET_LOG + '」の結果列をOK/要対応に更新してください。');
   lines.push('シート: ' + ss.getUrl());
-  sendSlack_(lines.join('\n'));
+  sendNotification_('[SaaS管理] 未確認の月次チェックが残っています(' + thisMonth + ')', lines.join('\n'));
 }
 
 // ---------------------------------------------------------------------------
-// Slack送信
+// メール送信
 // ---------------------------------------------------------------------------
 
-/** Incoming WebhookでSlackに送信する。URL未設定時はログ出力のみ */
-function sendSlack_(text) {
-  const url = PropertiesService.getScriptProperties().getProperty(PROP_SLACK_WEBHOOK);
-  if (!url) {
-    Logger.log('スクリプト プロパティ ' + PROP_SLACK_WEBHOOK + ' が未設定です。通知内容:\n' + text);
+/** メールで通知する。宛先はNOTIFY_EMAILプロパティ、未設定ならスクリプト実行者 */
+function sendNotification_(subject, body) {
+  const to = PropertiesService.getScriptProperties().getProperty(PROP_NOTIFY_EMAIL) ||
+    Session.getEffectiveUser().getEmail();
+  if (!to) {
+    Logger.log('送信先メールアドレスが取得できませんでした。通知内容:\n' + subject + '\n' + body);
     return false;
   }
-  const res = UrlFetchApp.fetch(url, {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify({ text: text }),
-    muteHttpExceptions: true
-  });
-  if (res.getResponseCode() !== 200) {
-    Logger.log('Slack送信に失敗しました: HTTP ' + res.getResponseCode() + ' / ' + res.getContentText());
-    return false;
-  }
+  MailApp.sendEmail(to, subject, body);
+  Logger.log('メールを送信しました: ' + to + ' / ' + subject);
   return true;
 }
 
-/** 疎通確認用: Slackにテストメッセージを送る */
-function testSlackNotification() {
-  const ok = sendSlack_('✅ [SaaS管理] 通知テストです。このメッセージが見えていれば設定完了です。');
-  Logger.log(ok ? 'Slackに送信しました。' : '送信できませんでした。ログを確認してください。');
+/** 疎通確認用: 自分にテストメールを送る */
+function testEmailNotification() {
+  sendNotification_('[SaaS管理] 通知テスト',
+    'このメールが届いていれば通知設定は完了です。\n' +
+    '通知が来るのは「未確認チェックが残っているとき(毎月8日)」と「更新日が60日以内の契約があるとき(毎月1日)」だけです。');
 }
